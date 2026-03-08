@@ -14,7 +14,7 @@
 
 ## 🚀 快速开始
 
-### 方式一: 双击启动（推荐Windows用户）
+### 方式一: Windows 一键启动
 
 1. **双击 `run.bat` 文件**
    - 第一次运行会自动安装依赖（需要网络连接）
@@ -30,14 +30,31 @@
    📁 文件上传/存储目录: D:\\SharedServer\\SharedFolder
    ```
 
-### 方式二: 命令行启动
+### 方式二: macOS/Linux 一键启动
+
+1. **在终端中执行:**
+   ```bash
+   ./run.sh
+   ```
+   - 第一次运行会自动安装依赖
+   - 然后自动启动服务器
+
+2. **如果提示权限不足，先执行:**
+   ```bash
+   chmod +x run.sh
+   ./run.sh
+   ```
+
+### 方式三: 命令行启动（所有平台）
 
 ```bash
 # 1. 安装依赖（仅第一次需要）
-pip install -r requirements.txt
+pip install -r requirements.txt  # Windows
+pip3 install -r requirements.txt # macOS/Linux
 
 # 2. 启动服务器
-python app.py
+python app.py   # Windows
+python3 app.py  # macOS/Linux
 ```
 
 ## 📱 客户端访问
@@ -78,10 +95,25 @@ UPLOAD_FOLDER = Path('D:/your/path')   # 示例
 2. 在局域网 DNS 或每台客户端的 hosts 文件中，将该域名指向服务器 IP
 3. 重启服务后可用 `http://files.home:5000` 访问
 
-Windows 临时设置示例：
+**Windows 临时设置:**
 ```bat
 set LAN_DOMAIN=files.home
 python app.py
+```
+
+**macOS/Linux 临时设置:**
+```bash
+export LAN_DOMAIN=files.home
+python3 app.py
+```
+
+**或者使用启动脚本:**
+```bash
+# macOS/Linux
+LAN_DOMAIN=files.home ./run.sh
+
+# Windows
+set LAN_DOMAIN=files.home && run.bat
 ```
 
 ### 修改最大文件大小
@@ -104,7 +136,8 @@ app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024 * 1024  # 改为所需大小
 A: 
 - 确保双方在同一局域网
 - 检查防火墙是否阻止5000端口
-  - Windows：设置 > 防火墙 > 允许应用通过防火墙 > 允许Python
+  - **Windows**: 设置 > 防火墙 > 允许应用通过防火墙 > 允许Python
+  - **macOS**: 系统偏好设置 > 安全性与隐私 > 防火墙 > 防火墙选项 > 允许Python
 
 ### Q: 上传总是失败？
 A:
