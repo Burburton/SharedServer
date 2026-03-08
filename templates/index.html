@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>局域网共享服务器</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        }
+
+        .header h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        .header-info {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            color: #666;
+            font-size: 14px;
+        }
+
+        .info-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .info-item strong {
+            color: #667eea;
+        }
+
+        .disk-space-info {
+            background: #f0f2ff;
+            border-left: 4px solid #667eea;
+            padding: 15px;
+            border-radius: 6px;
+            margin-top: 15px;
+        }
+
+        .network-speed-info {
+            background: #eefaf5;
+            border-left: 4px solid #33a06f;
+            padding: 12px 15px;
+            border-radius: 6px;
+            margin-top: 12px;
+            font-size: 13px;
+            color: #2f5f4a;
+            display: flex;
+            gap: 14px;
+            flex-wrap: wrap;
+        }
+
+        .disk-space-bar {
+            background: #eee;
+            height: 8px;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 8px;
+        }
+
+        .disk-space-used {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            border-radius: 4px;
+        }
+
+        .upload-section {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        }
+
+        .upload-area {
+            border: 2px dashed #667eea;
+            border-radius: 8px;
+            padding: 40px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            background: #f8f9ff;
+        }
+
+        .upload-area:hover {
+            border-color: #764ba2;
+            background: #f0f2ff;
+        }
+
+        .upload-area.dragover {
+            border-color: #764ba2;
+            background: #e8ebff;
+            transform: scale(1.02);
+        }
+
+        .upload-icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+        }
+
+        .upload-text h3 {
+            color: #333;
+            margin-bottom: 8px;
+        }
+
+        .upload-text p {
+            color: #999;
+            font-size: 14px;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        .upload-progress {
+            margin-top: 20px;
+            display: none;
+        }
+
+        .progress-item {
+            margin-bottom: 15px;
+            padding: 12px;
+            background: #f8f9ff;
+            border-radius: 6px;
+        }
+
+        .progress-name {
+            font-size: 14px;
+            color: #333;
+            margin-bottom: 6px;
+            word-break: break-all;
+        }
+
+        .progress-stats {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            color: #999;
+            margin-bottom: 6px;
+        }
+
+        .progress-bar-container {
+            width: 100%;
+            height: 6px;
+            background: #eee;
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            width: 0%;
+            transition: width 0.2s;
+        }
+
+        .files-section {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        }
+
+        .section-title {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .files-list {
+            display: grid;
+            gap: 12px;
+        }
+
+        .file-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px;
+            border: 1px solid #eee;
+            border-radius: 8px;
+            transition: all 0.3s;
+        }
+
+        .file-item:hover {
+            background: #f8f9ff;
+            border-color: #667eea;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.1);
+        }
+
+        .file-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            flex: 1;
+            min-width: 0;
+        }
+
+        .file-icon {
+            font-size: 24px;
+            width: 30px;
+            text-align: center;
+        }
+
+        .file-details {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .file-name {
+            color: #333;
+            font-weight: 500;
+            word-break: break-all;
+            margin-bottom: 4px;
+        }
+
+        .file-meta {
+            display: flex;
+            gap: 15px;
+            color: #999;
+            font-size: 12px;
+        }
+
+        .file-actions {
+            display: flex;
+            gap: 10px;
+            margin-left: 15px;
+        }
+
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s;
+            white-space: nowrap;
+        }
+
+        button:hover {
+            background: #764ba2;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+
+        button.delete {
+            background: #ff6b6b;
+        }
+
+        button.delete:hover {
+            background: #ff5252;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: #999;
+        }
+
+        .empty-icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: #333;
+            color: white;
+            padding: 16px 24px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+            animation: slideIn 0.3s;
+            z-index: 1000;
+            max-width: 400px;
+        }
+
+        .toast.success {
+            background: #4caf50;
+        }
+
+        .toast.error {
+            background: #f44336;
+        }
+
+        .toast.warning {
+            background: #ff9800;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .file-item {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .file-actions {
+                margin-left: 0;
+                margin-top: 12px;
+                width: 100%;
+            }
+
+            .file-actions button {
+                flex: 1;
+            }
+
+            .header-info {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📁 局域网共享服务器</h1>
+            <div class="header-info">
+                <div class="info-item">
+                    🖥️ <strong>本机:</strong> <code>127.0.0.1:5000</code>
+                </div>
+                <div class="info-item">
+                    🌐 <strong>局域网:</strong> <code>http://{{ server_ip }}:5000</code>
+                </div>
+                {% if server_domain %}
+                <div class="info-item">
+                    🏷️ <strong>域名:</strong> <code>http://{{ server_domain }}:5000</code>
+                </div>
+                {% endif %}
+                <div class="info-item">
+                    ℹ️ <strong>复制上面链接，在其他电脑浏览器中打开</strong>
+                </div>
+            </div>
+            <div class="disk-space-info" id="diskSpaceInfo">
+                <div style="font-size: 13px; color: #666;">
+                    💾 磁盘空间: <strong id="diskUsed">0 GB</strong> / <strong id="diskTotal">0 GB</strong>
+                    (<strong id="diskFree">0 GB</strong> 可用)
+                </div>
+                <div class="disk-space-bar">
+                    <div class="disk-space-used" id="diskUsedBar" style="width: 0%;"></div>
+                </div>
+            </div>
+            <div class="network-speed-info">
+                <div>🌐 当前网速: <strong id="currentNetSpeed">检测中...</strong></div>
+                <div>⚡ 传输速度: <strong id="liveTransferSpeed">空闲</strong></div>
+            </div>
+        </div>
+
+        <div class="upload-section">
+            <div class="upload-area" id="uploadArea">
+                <div class="upload-icon">📤</div>
+                <div class="upload-text">
+                    <h3>拖拽文件到这里上传</h3>
+                    <p>或 <span style="color: #667eea; font-weight: 500;">点击选择文件</span></p>
+                </div>
+            </div>
+            <div class="upload-progress" id="uploadProgress"></div>
+            <input type="file" id="fileInput" multiple>
+        </div>
+
+        <div class="files-section">
+            <div class="section-title">📂 文件列表 (<span id="fileCount">0</span>)</div>
+            <div class="files-list" id="filesList">
+                <div class="empty-state">
+                    <div class="empty-icon">📭</div>
+                    <p>暂无文件</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('fileInput');
+        const filesList = document.getElementById('filesList');
+        const fileCount = document.getElementById('fileCount');
+        const uploadProgress = document.getElementById('uploadProgress');
+        const currentNetSpeed = document.getElementById('currentNetSpeed');
+        const liveTransferSpeed = document.getElementById('liveTransferSpeed');
+        let diskSpaceData = {};
+
+        // 格式化字节大小
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
+        }
+
+        function formatSpeed(bytesPerSecond) {
+            if (!Number.isFinite(bytesPerSecond) || bytesPerSecond <= 0) return '0 B/s';
+            return `${formatBytes(bytesPerSecond)}/s`;
+        }
+
+        function updateCurrentNetworkSpeed() {
+            const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+            if (connection && typeof connection.downlink === 'number') {
+                currentNetSpeed.textContent = `${connection.downlink.toFixed(1)} Mbps`;
+            } else {
+                currentNetSpeed.textContent = '浏览器不支持估算';
+            }
+        }
+
+        // 加载磁盘空间信息
+        function loadDiskSpace() {
+            fetch('/api/disk-space')
+                .then(response => response.json())
+                .then(data => {
+                    diskSpaceData = data;
+                    const usedSpace = data.total - data.free;
+                    const usedPercent = (usedSpace / data.total) * 100;
+                    
+                    document.getElementById('diskUsed').textContent = formatBytes(usedSpace);
+                    document.getElementById('diskTotal').textContent = formatBytes(data.total);
+                    document.getElementById('diskFree').textContent = formatBytes(data.free);
+                    document.getElementById('diskUsedBar').style.width = usedPercent + '%';
+                })
+                .catch(error => {
+                    console.error('加载磁盘空间信息失败:', error);
+                });
+        }
+
+        // 上传区拖拽
+        uploadArea.addEventListener('click', () => fileInput.click());
+        
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            handleFiles(e.dataTransfer.files);
+        });
+
+        fileInput.addEventListener('change', () => {
+            handleFiles(fileInput.files);
+        });
+
+        function handleFiles(files) {
+            if (files.length === 0) return;
+            
+            // 计算总大小
+            let totalSize = 0;
+            const fileArray = Array.from(files);
+            for (let file of fileArray) {
+                totalSize += file.size;
+            }
+
+            // 检查磁盘空间
+            if (totalSize > diskSpaceData.free - (1 * 1024 * 1024)) {
+                showToast(`❌ 磁盘空间不足！需要 ${formatBytes(totalSize)}，但只有 ${formatBytes(diskSpaceData.free - 1024*1024)} 可用`, 'error');
+                return;
+            }
+
+            // 显示上传进度
+            uploadProgress.style.display = 'block';
+            uploadProgress.innerHTML = `
+                <div class="progress-item" id="upload-progress-container">
+                    <div class="progress-name">批量上传 (${fileArray.length} 个文件)</div>
+                    <div class="progress-stats">
+                        <span id="upload-progress-text">0%</span>
+                        <span id="upload-progress-size">0 B / ${formatBytes(totalSize)}</span>
+                    </div>
+                    <div class="progress-bar-container">
+                        <div class="progress-bar-fill" id="upload-progress-fill" style="width: 0%;"></div>
+                    </div>
+                </div>
+            `;
+
+            const formData = new FormData();
+            fileArray.forEach((file) => {
+                formData.append('files', file);
+            });
+
+            // 禁用上传区
+            uploadArea.style.pointerEvents = 'none';
+            uploadArea.style.opacity = '0.6';
+
+            // 统一恢复上传区状态，避免异常分支漏恢复
+            function resetUploadUI(hideProgress = false) {
+                uploadArea.style.pointerEvents = 'auto';
+                uploadArea.style.opacity = '1';
+                liveTransferSpeed.textContent = '空闲';
+                if (hideProgress) {
+                    uploadProgress.style.display = 'none';
+                }
+            }
+
+            // 使用XMLHttpRequest来监控上传进度
+            const xhr = new XMLHttpRequest();
+            let lastLoaded = 0;
+            let lastTime = performance.now();
+            liveTransferSpeed.textContent = '上传准备中...';
+
+            xhr.upload.addEventListener('progress', (e) => {
+                if (e.lengthComputable) {
+                    const percentComplete = (e.loaded / e.total) * 100;
+                    const progressFill = document.getElementById('upload-progress-fill');
+                    const progressText = document.getElementById('upload-progress-text');
+                    const progressSize = document.getElementById('upload-progress-size');
+
+                    if (progressFill && progressText && progressSize) {
+                        progressFill.style.width = `${percentComplete}%`;
+                        progressText.textContent = `${Math.round(percentComplete)}%`;
+                        progressSize.textContent = `${formatBytes(e.loaded)} / ${formatBytes(e.total)}`;
+                    }
+
+                    const now = performance.now();
+                    const elapsedSeconds = (now - lastTime) / 1000;
+                    if (elapsedSeconds > 0) {
+                        const bytesDiff = e.loaded - lastLoaded;
+                        liveTransferSpeed.textContent = `上传 ${formatSpeed(bytesDiff / elapsedSeconds)}`;
+                        lastLoaded = e.loaded;
+                        lastTime = now;
+                    }
+                }
+            });
+
+            xhr.addEventListener('load', () => {
+                try {
+                    const data = JSON.parse(xhr.responseText);
+                    if (data.success) {
+                        showToast(`✅ ${data.message}`, 'success');
+                        fileInput.value = '';
+                        uploadProgress.style.display = 'none';
+                        loadFiles();
+                        loadDiskSpace();
+                    } else {
+                        showToast(`❌ ${data.message}`, 'error');
+                        uploadProgress.style.display = 'none';
+                    }
+                } catch(e) {
+                    showToast(`❌ 上传失败`, 'error');
+                    uploadProgress.style.display = 'none';
+                }
+            });
+
+            xhr.addEventListener('error', () => {
+                showToast(`❌ 上传失败`, 'error');
+                uploadProgress.style.display = 'none';
+            });
+
+            xhr.addEventListener('abort', () => {
+                showToast('❌ 上传已取消', 'warning');
+                uploadProgress.style.display = 'none';
+            });
+
+            xhr.addEventListener('timeout', () => {
+                showToast('❌ 上传超时', 'error');
+                uploadProgress.style.display = 'none';
+            });
+
+            // 无论成功、失败、取消或超时，最终都恢复可点击
+            xhr.addEventListener('loadend', () => {
+                resetUploadUI(false);
+            });
+
+            xhr.open('POST', '/upload', true);
+            try {
+                xhr.send(formData);
+            } catch (error) {
+                showToast(`❌ 上传失败: ${error.message}`, 'error');
+                resetUploadUI(true);
+            }
+        }
+
+        function loadFiles() {
+            fetch('/api/files')
+                .then(response => response.json())
+                .then(files => {
+                    fileCount.textContent = files.length;
+                    
+                    if (files.length === 0) {
+                        filesList.innerHTML = `
+                            <div class="empty-state">
+                                <div class="empty-icon">📭</div>
+                                <p>暂无文件</p>
+                            </div>
+                        `;
+                        return;
+                    }
+
+                    filesList.innerHTML = files.map(file => `
+                        <div class="file-item">
+                            <div class="file-info">
+                                <div class="file-icon">${file.type === 'folder' ? '📁' : '📄'}</div>
+                                <div class="file-details">
+                                    <div class="file-name">${file.name}</div>
+                                    <div class="file-meta">
+                                        <span>📊 ${file.size}</span>
+                                        <span>📅 ${file.modified}</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="file-actions">
+                                <button onclick="downloadFile('${file.name}')">⬇️ 下载</button>
+                                <button class="delete" onclick="deleteFile('${file.name}')">🗑️ 删除</button>
+                            </div>
+                        </div>
+                    `).join('');
+                })
+                .catch(error => {
+                    console.error('加载文件列表失败:', error);
+                    showToast('❌ 加载文件列表失败', 'error');
+                });
+        }
+
+        async function downloadFile(filename) {
+            try {
+                uploadProgress.style.display = 'block';
+                uploadProgress.innerHTML = `
+                    <div class="progress-item" id="download-progress-container">
+                        <div class="progress-name">下载中: ${filename}</div>
+                        <div class="progress-stats">
+                            <span id="download-progress-text">0%</span>
+                            <span id="download-progress-size">0 B / 计算中...</span>
+                        </div>
+                        <div class="progress-bar-container">
+                            <div class="progress-bar-fill" id="download-progress-fill" style="width: 0%;"></div>
+                        </div>
+                    </div>
+                `;
+
+                liveTransferSpeed.textContent = '下载准备中...';
+                const response = await fetch(`/download/${encodeURIComponent(filename)}`);
+                if (!response.ok || !response.body) {
+                    throw new Error('下载请求失败');
+                }
+
+                const contentLength = Number(response.headers.get('Content-Length')) || 0;
+                const contentDisposition = response.headers.get('Content-Disposition') || '';
+                const nameMatch = contentDisposition.match(/filename\*?=(?:UTF-8''|\")?([^\";]+)/i);
+                const downloadName = nameMatch ? decodeURIComponent(nameMatch[1].replace(/\"/g, '')) : filename;
+
+                const reader = response.body.getReader();
+                const chunks = [];
+                let receivedLength = 0;
+                let lastBytes = 0;
+                let lastTime = performance.now();
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    chunks.push(value);
+                    receivedLength += value.length;
+
+                    const progressFill = document.getElementById('download-progress-fill');
+                    const progressText = document.getElementById('download-progress-text');
+                    const progressSize = document.getElementById('download-progress-size');
+
+                    if (contentLength > 0) {
+                        const percent = (receivedLength / contentLength) * 100;
+                        progressFill.style.width = `${percent}%`;
+                        progressText.textContent = `${Math.round(percent)}%`;
+                        progressSize.textContent = `${formatBytes(receivedLength)} / ${formatBytes(contentLength)}`;
+                    } else {
+                        progressText.textContent = '进行中';
+                        progressSize.textContent = `${formatBytes(receivedLength)} / 未知`;
+                    }
+
+                    const now = performance.now();
+                    const elapsedSeconds = (now - lastTime) / 1000;
+                    if (elapsedSeconds > 0) {
+                        liveTransferSpeed.textContent = `下载 ${formatSpeed((receivedLength - lastBytes) / elapsedSeconds)}`;
+                        lastBytes = receivedLength;
+                        lastTime = now;
+                    }
+                }
+
+                const blob = new Blob(chunks);
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = downloadName;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(url);
+
+                uploadProgress.style.display = 'none';
+                liveTransferSpeed.textContent = '空闲';
+            } catch (error) {
+                uploadProgress.style.display = 'none';
+                liveTransferSpeed.textContent = '空闲';
+                showToast(`❌ 下载失败: ${error.message}`, 'error');
+            }
+        }
+
+        function deleteFile(filename) {
+            if (!confirm(`确定要删除 "${filename}" 吗?`)) return;
+
+            fetch(`/delete/${encodeURIComponent(filename)}`, {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showToast(`✅ 删除成功`, 'success');
+                    loadFiles();
+                    loadDiskSpace();
+                } else {
+                    showToast(`❌ ${data.message}`, 'error');
+                }
+            })
+            .catch(error => {
+                showToast(`❌ 删除失败: ${error.message}`, 'error');
+            });
+        }
+
+        function showToast(message, type = 'success') {
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.textContent = message;
+            document.body.appendChild(toast);
+
+            setTimeout(() => toast.remove(), 4000);
+        }
+
+        // 初始加载
+        updateCurrentNetworkSpeed();
+        loadDiskSpace();
+        loadFiles();
+
+        const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+        if (connection && typeof connection.addEventListener === 'function') {
+            connection.addEventListener('change', updateCurrentNetworkSpeed);
+        }
+        
+        // 每5秒刷新一次文件列表和磁盘空间
+        setInterval(() => {
+            loadFiles();
+            loadDiskSpace();
+        }, 5000);
+    </script>
+</body>
+</html>
