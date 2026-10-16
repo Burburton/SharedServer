@@ -15,3 +15,7 @@ SharedFolder/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Persistent access credentials
+.sharedserver.json
+.password-*

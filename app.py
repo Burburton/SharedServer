@@ -3,7 +3,11 @@ from pathlib import Path
 from datetime import datetime
 import hmac
 import os
-import secrets
+import io
+import argparse
+import qrcode
+import qrcode.image.svg
+from credentials import load_hash, configure_password, check_password_hash
 import shutil
 import socket
 import tempfile
@@ -13,7 +17,8 @@ app = Flask(__name__)
 UPLOAD_FOLDER = Path(os.getenv('SHARED_FOLDER', str(Path(__file__).parent / 'SharedFolder'))).expanduser().resolve()
 UPLOAD_FOLDER.mkdir(parents=True, exist_ok=True)
 app.config.update(UPLOAD_FOLDER=UPLOAD_FOLDER, MAX_CONTENT_LENGTH=int(os.getenv('MAX_UPLOAD_BYTES', 10 * 1024**3)))
-ACCESS_TOKEN = os.getenv('SHARED_PASSWORD') or secrets.token_urlsafe(18)
+ACCESS_TOKEN = os.getenv('SHARED_PASSWORD')
+PASSWORD_HASH = None
 PORT = int(os.getenv('PORT', '5000'))
 LAN_DOMAIN = os.getenv('LAN_DOMAIN', '').strip()
 
@@ -21,8 +26,16 @@ LAN_DOMAIN = os.getenv('LAN_DOMAIN', '').strip()
 @app.before_request
 def authorize():
     auth = request.authorization
-    if not auth or not hmac.compare_digest(auth.username or '', 'shared') or not hmac.compare_digest((auth.password or '').encode(), ACCESS_TOKEN.encode()):
-        return Response('请使用启动终端显示的账号密码登录', 401, {'WWW-Authenticate': 'Basic realm="SharedServer", charset="UTF-8"'})
+    valid_password = False
+    if auth and auth.type.lower() == 'basic':
+        if ACCESS_TOKEN:
+            valid_password = hmac.compare_digest((auth.password or '').encode(), ACCESS_TOKEN.encode())
+        else:
+            saved_hash = PASSWORD_HASH or load_hash()
+            if saved_hash:
+                valid_password = check_password_hash(saved_hash, auth.password or '')
+    if not auth or auth.username != 'shared' or not valid_password:
+        return Response('请使用账号 shared 和你设置的固定密码登录', 401, {'WWW-Authenticate': 'Basic realm="SharedServer", charset="UTF-8"'})
     if request.method not in ('GET', 'HEAD', 'OPTIONS'):
         origin = request.headers.get('Origin')
         if request.headers.get('Sec-Fetch-Site') == 'cross-site' or (origin and origin != request.host_url.rstrip('/')):
@@ -105,7 +118,18 @@ def get_file_info():
 
 @app.get('/')
 def index():
-    return render_template('index.html', server_ip=get_local_ip(), server_port=PORT, server_domain=LAN_DOMAIN)
+    return render_template('index.html', server_ip=get_local_ip(), server_port=PORT, server_domain=LAN_DOMAIN, lan_url=lan_url())
+
+
+def lan_url():
+    return f'http://{LAN_DOMAIN or get_local_ip()}:{PORT}'
+
+
+@app.get('/access-qr.svg')
+def access_qr():
+    output = io.BytesIO()
+    qrcode.make(lan_url(), image_factory=qrcode.image.svg.SvgPathImage).save(output)
+    return Response(output.getvalue(), mimetype='image/svg+xml')
 
 
 @app.get('/api/files')
@@ -210,5 +234,20 @@ def delete(filename):
 
 if __name__ == '__main__':
     from waitress import serve
-    print(f'本机：http://127.0.0.1:{PORT}\n局域网：http://{get_local_ip()}:{PORT}\n共享目录：{root()}\n账号：shared\n密码：{ACCESS_TOKEN}', flush=True)
+    parser = argparse.ArgumentParser(description='局域网文件共享服务器')
+    parser.add_argument('--reset-password', action='store_true', help='重新设置保存的访问密码')
+    args = parser.parse_args()
+    if args.reset_password or not ACCESS_TOKEN:
+        try:
+            PASSWORD_HASH = configure_password(reset=args.reset_password)
+        except (EOFError, KeyboardInterrupt):
+            raise SystemExit('密码设置已取消，服务未启动。')
+    print(f'本机：http://127.0.0.1:{PORT}\n局域网：{lan_url()}\n共享目录：{root()}\n账号：shared', flush=True)
+    print('密码：使用 SHARED_PASSWORD 环境变量设置的密码' if ACCESS_TOKEN else '密码：使用你设置的固定密码（已保存，重启不变）')
+    print('手机扫码打开网页，再输入账号密码：')
+    qr = qrcode.QRCode(border=2)
+    qr.add_data(lan_url())
+    qr.make(fit=True)
+    qr.print_ascii(invert=True)
+    print('手机需能访问上述局域网地址；二维码不包含密码。', flush=True)
     serve(app, host=os.getenv('HOST', '0.0.0.0'), port=PORT, threads=8, max_request_body_size=app.config['MAX_CONTENT_LENGTH'])

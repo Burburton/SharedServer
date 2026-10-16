@@ -1,11 +1,13 @@
 @echo off
 chcp 65001 >nul
 cd /d "%~dp0"
-python -m venv .venv
-if errorlevel 1 goto fail
+if not exist .venv\Scripts\pip.exe (
+    python -m venv .venv
+    if errorlevel 1 goto fail
+)
 .venv\Scripts\python -m pip install -q -r requirements.txt
 if errorlevel 1 goto fail
-.venv\Scripts\python app.py
+.venv\Scripts\python app.py %*
 pause
 exit /b
 :fail

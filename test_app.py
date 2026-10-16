@@ -10,6 +10,8 @@ import app
 
 class FileTransferTests(unittest.TestCase):
     def setUp(self):
+        self.old_token = app.ACCESS_TOKEN
+        app.ACCESS_TOKEN = 'test-password'
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name) / 'shared'
         self.root.mkdir()
@@ -19,6 +21,7 @@ class FileTransferTests(unittest.TestCase):
         self.headers = {'Authorization': f'Basic {token}', 'X-SharedServer': '1'}
 
     def tearDown(self):
+        app.ACCESS_TOKEN = self.old_token
         self.temp.cleanup()
 
     def upload(self, name, content=b'hello'):

@@ -370,6 +370,17 @@
                     ℹ️ <strong>复制上面链接，在其他电脑浏览器中打开</strong>
                 </div>
             </div>
+            <details style="margin-top: 16px;">
+                <summary style="cursor: pointer;">📱 手机扫码访问</summary>
+                <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap; margin-top:12px;">
+                    <img src="/access-qr.svg" alt="局域网访问二维码" width="180" height="180">
+                    <div>
+                        <p><a href="{{ lan_url }}">{{ lan_url }}</a></p>
+                        <p>账号：shared · 密码：首次启动时设置的密码</p>
+                        <p>手机需能连接此地址，二维码不包含密码。</p>
+                    </div>
+                </div>
+            </details>
             <div class="disk-space-info" id="diskSpaceInfo">
                 <div style="font-size: 13px; color: #666;">
                     💾 磁盘空间: <strong id="diskUsed">0 GB</strong> / <strong id="diskTotal">0 GB</strong>
