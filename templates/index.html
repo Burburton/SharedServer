@@ -356,14 +356,14 @@
             <h1>📁 局域网共享服务器</h1>
             <div class="header-info">
                 <div class="info-item">
-                    🖥️ <strong>本机:</strong> <code>127.0.0.1:5000</code>
+                    🖥️ <strong>本机:</strong> <code>127.0.0.1:{{ server_port }}</code>
                 </div>
                 <div class="info-item">
-                    🌐 <strong>局域网:</strong> <code>http://{{ server_ip }}:5000</code>
+                    🌐 <strong>局域网:</strong> <code>http://{{ server_ip }}:{{ server_port }}</code>
                 </div>
                 {% if server_domain %}
                 <div class="info-item">
-                    🏷️ <strong>域名:</strong> <code>http://{{ server_domain }}:5000</code>
+                    🏷️ <strong>域名:</strong> <code>http://{{ server_domain }}:{{ server_port }}</code>
                 </div>
                 {% endif %}
                 <div class="info-item">
@@ -602,6 +602,7 @@
             });
 
             xhr.open('POST', '/upload', true);
+            xhr.setRequestHeader('X-SharedServer', '1');
             try {
                 xhr.send(formData);
             } catch (error) {
@@ -626,24 +627,32 @@
                         return;
                     }
 
-                    filesList.innerHTML = files.map(file => `
-                        <div class="file-item">
-                            <div class="file-info">
-                                <div class="file-icon">${file.type === 'folder' ? '📁' : '📄'}</div>
-                                <div class="file-details">
-                                    <div class="file-name">${file.name}</div>
-                                    <div class="file-meta">
-                                        <span>📊 ${file.size}</span>
-                                        <span>📅 ${file.modified}</span>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="file-actions">
-                                <button onclick="downloadFile('${file.name}')">⬇️ 下载</button>
-                                <button class="delete" onclick="deleteFile('${file.name}')">🗑️ 删除</button>
-                            </div>
-                        </div>
-                    `).join('');
+                    filesList.replaceChildren();
+                    for (const file of files) {
+                        const row = document.createElement('div');
+                        row.className = 'file-item';
+                        const info = document.createElement('div');
+                        info.className = 'file-info';
+                        const label = document.createElement('div');
+                        label.className = 'file-name';
+                        label.textContent = `${file.type === 'folder' ? '📁' : '📄'} ${file.name}`;
+                        const meta = document.createElement('div');
+                        meta.className = 'file-meta';
+                        meta.textContent = `${file.size} · ${file.modified}`;
+                        info.append(label, meta);
+                        const actions = document.createElement('div');
+                        actions.className = 'file-actions';
+                        const download = document.createElement('button');
+                        download.textContent = '⬇️ 下载';
+                        download.onclick = () => downloadFile(file.name);
+                        const remove = document.createElement('button');
+                        remove.className = 'delete';
+                        remove.textContent = '🗑️ 删除';
+                        remove.onclick = () => deleteFile(file.name);
+                        actions.append(download, remove);
+                        row.append(info, actions);
+                        filesList.append(row);
+                    }
                 })
                 .catch(error => {
                     console.error('加载文件列表失败:', error);
@@ -651,93 +660,22 @@
                 });
         }
 
-        async function downloadFile(filename) {
-            try {
-                uploadProgress.style.display = 'block';
-                uploadProgress.innerHTML = `
-                    <div class="progress-item" id="download-progress-container">
-                        <div class="progress-name">下载中: ${filename}</div>
-                        <div class="progress-stats">
-                            <span id="download-progress-text">0%</span>
-                            <span id="download-progress-size">0 B / 计算中...</span>
-                        </div>
-                        <div class="progress-bar-container">
-                            <div class="progress-bar-fill" id="download-progress-fill" style="width: 0%;"></div>
-                        </div>
-                    </div>
-                `;
-
-                liveTransferSpeed.textContent = '下载准备中...';
-                const response = await fetch(`/download/${encodeURIComponent(filename)}`);
-                if (!response.ok || !response.body) {
-                    throw new Error('下载请求失败');
-                }
-
-                const contentLength = Number(response.headers.get('Content-Length')) || 0;
-                const contentDisposition = response.headers.get('Content-Disposition') || '';
-                const nameMatch = contentDisposition.match(/filename\*?=(?:UTF-8''|\")?([^\";]+)/i);
-                const downloadName = nameMatch ? decodeURIComponent(nameMatch[1].replace(/\"/g, '')) : filename;
-
-                const reader = response.body.getReader();
-                const chunks = [];
-                let receivedLength = 0;
-                let lastBytes = 0;
-                let lastTime = performance.now();
-
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-
-                    chunks.push(value);
-                    receivedLength += value.length;
-
-                    const progressFill = document.getElementById('download-progress-fill');
-                    const progressText = document.getElementById('download-progress-text');
-                    const progressSize = document.getElementById('download-progress-size');
-
-                    if (contentLength > 0) {
-                        const percent = (receivedLength / contentLength) * 100;
-                        progressFill.style.width = `${percent}%`;
-                        progressText.textContent = `${Math.round(percent)}%`;
-                        progressSize.textContent = `${formatBytes(receivedLength)} / ${formatBytes(contentLength)}`;
-                    } else {
-                        progressText.textContent = '进行中';
-                        progressSize.textContent = `${formatBytes(receivedLength)} / 未知`;
-                    }
-
-                    const now = performance.now();
-                    const elapsedSeconds = (now - lastTime) / 1000;
-                    if (elapsedSeconds > 0) {
-                        liveTransferSpeed.textContent = `下载 ${formatSpeed((receivedLength - lastBytes) / elapsedSeconds)}`;
-                        lastBytes = receivedLength;
-                        lastTime = now;
-                    }
-                }
-
-                const blob = new Blob(chunks);
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = downloadName;
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
-                URL.revokeObjectURL(url);
-
-                uploadProgress.style.display = 'none';
-                liveTransferSpeed.textContent = '空闲';
-            } catch (error) {
-                uploadProgress.style.display = 'none';
-                liveTransferSpeed.textContent = '空闲';
-                showToast(`❌ 下载失败: ${error.message}`, 'error');
-            }
+        function downloadFile(filename) {
+            const link = document.createElement('a');
+            link.href = `/download/${encodeURIComponent(filename)}`;
+            link.download = filename;
+            document.body.append(link);
+            link.click();
+            link.remove();
+            showToast('下载已交给浏览器，可在浏览器下载列表查看进度');
         }
 
         function deleteFile(filename) {
             if (!confirm(`确定要删除 "${filename}" 吗?`)) return;
 
             fetch(`/delete/${encodeURIComponent(filename)}`, {
-                method: 'POST'
+                method: 'POST',
+                headers: {'X-SharedServer': '1'}
             })
             .then(response => response.json())
             .then(data => {

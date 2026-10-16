@@ -1,214 +1,214 @@
-from flask import Flask, render_template, request, send_file, jsonify
+from flask import Flask, render_template, request, send_file, jsonify, Response, abort
 from pathlib import Path
-import os
-import socket
-import mimetypes
-import shutil
 from datetime import datetime
-from functools import wraps
+import hmac
+import os
+import secrets
+import shutil
+import socket
+import tempfile
+import zipfile
 
 app = Flask(__name__)
-
-# 设置上传文件夹为SharedFolder
-# 如果结构是: d:\SharedServer (app在这里) 和 d:\SharedFolder (要共享)
-# 使用下面这行：
-UPLOAD_FOLDER = Path(__file__).parent / 'SharedFolder'
-# 如果要改为其他路径，改为绝对路径即可，比如：
-# UPLOAD_FOLDER = Path('d:/your/path/to/folder')
-
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024 * 1024  # 10GB 最大文件大小
-LAN_DOMAIN = os.getenv('LAN_DOMAIN', '').strip()  # 可选：局域网域名，如 files.home
-
-# 确保文件夹存在
+UPLOAD_FOLDER = Path(os.getenv('SHARED_FOLDER', str(Path(__file__).parent / 'SharedFolder'))).expanduser().resolve()
 UPLOAD_FOLDER.mkdir(parents=True, exist_ok=True)
+app.config.update(UPLOAD_FOLDER=UPLOAD_FOLDER, MAX_CONTENT_LENGTH=int(os.getenv('MAX_UPLOAD_BYTES', 10 * 1024**3)))
+ACCESS_TOKEN = os.getenv('SHARED_PASSWORD') or secrets.token_urlsafe(18)
+PORT = int(os.getenv('PORT', '5000'))
+LAN_DOMAIN = os.getenv('LAN_DOMAIN', '').strip()
+
+
+@app.before_request
+def authorize():
+    auth = request.authorization
+    if not auth or not hmac.compare_digest(auth.username or '', 'shared') or not hmac.compare_digest((auth.password or '').encode(), ACCESS_TOKEN.encode()):
+        return Response('请使用启动终端显示的账号密码登录', 401, {'WWW-Authenticate': 'Basic realm="SharedServer", charset="UTF-8"'})
+    if request.method not in ('GET', 'HEAD', 'OPTIONS'):
+        origin = request.headers.get('Origin')
+        if request.headers.get('Sec-Fetch-Site') == 'cross-site' or (origin and origin != request.host_url.rstrip('/')):
+            abort(403)
+        if request.headers.get('X-SharedServer') != '1':
+            abort(403)
+
+
+@app.after_request
+def secure_headers(response):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['Cache-Control'] = 'no-store'
+    return response
+
+
+@app.errorhandler(413)
+def too_large(error):
+    return jsonify(success=False, message='上传请求超过大小上限或磁盘空间不足'), 413
+
+
+@app.errorhandler(OSError)
+def storage_error(error):
+    app.logger.exception('Storage operation failed')
+    return jsonify(success=False, message='文件操作失败，请检查磁盘空间和权限'), 500
+
+
+def root():
+    return Path(app.config['UPLOAD_FOLDER']).resolve()
+
+
+def safe_path(filename):
+    base = root()
+    candidate = base / filename
+    if not filename or '\\' in filename or Path(filename).is_absolute():
+        abort(403)
+    if any(part.startswith('.') for part in Path(filename).parts):
+        abort(403)
+    current = base
+    for part in Path(filename).parts:
+        current = current / part
+        if current.is_symlink():
+            abort(403)
+    resolved = candidate.resolve()
+    if resolved == base or not resolved.is_relative_to(base):
+        abort(403)
+    return resolved
+
 
 def get_local_ip():
-    """获取本机局域网IP"""
     try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))
-        ip = s.getsockname()[0]
-        s.close()
-        return ip
-    except:
-        return "127.0.0.1"
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.connect(('8.8.8.8', 80))
+            return sock.getsockname()[0]
+    except OSError:
+        return '127.0.0.1'
 
-def get_file_info():
-    """获取文件列表及其信息"""
-    files = []
-    ignore_files = ['app.py', 'requirements.txt']
-    ignore_dirs = ['__pycache__', '.git', 'venv', 'env']
-    
-    for item in UPLOAD_FOLDER.iterdir():
-        if item.name in ignore_files or item.name in ignore_dirs:
-            continue
-        if item.is_file():
-            stat = item.stat()
-            files.append({
-                'name': item.name,
-                'size': format_size(stat.st_size),
-                'size_bytes': stat.st_size,
-                'modified': datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S'),
-                'type': 'file'
-            })
-        elif item.is_dir():
-            size = sum(f.stat().st_size for f in item.rglob('*') if f.is_file())
-            files.append({
-                'name': item.name,
-                'size': format_size(size),
-                'size_bytes': size,
-                'modified': datetime.fromtimestamp(item.stat().st_mtime).strftime('%Y-%m-%d %H:%M:%S'),
-                'type': 'folder'
-            })
-    
-    return sorted(files, key=lambda x: (x['type'] != 'folder', x['name'].lower()))
 
 def format_size(size):
-    """格式化文件大小"""
     for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
         if size < 1024:
-            return f'{size:.1f}{unit}' if size < 100 else f'{int(size)}{unit}'
+            return f'{size:.1f}{unit}'
         size /= 1024
     return f'{size:.1f}PB'
 
-@app.route('/')
+
+def get_file_info():
+    files = []
+    for item in root().iterdir():
+        if item.name.startswith('.') or item.is_symlink():
+            continue
+        try:
+            stat = item.stat()
+            files.append(dict(name=item.name, size=format_size(stat.st_size) if item.is_file() else '文件夹', size_bytes=stat.st_size if item.is_file() else None,
+                              modified=datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S'), type='folder' if item.is_dir() else 'file'))
+        except FileNotFoundError:
+            continue
+    return sorted(files, key=lambda item: (item['type'] != 'folder', item['name'].lower()))
+
+
+@app.get('/')
 def index():
-    """主页"""
-    files = get_file_info()
-    ip = get_local_ip()
-    return render_template(
-        'index.html',
-        files=files,
-        server_ip=ip,
-        server_port=5000,
-        server_domain=LAN_DOMAIN
-    )
+    return render_template('index.html', server_ip=get_local_ip(), server_port=PORT, server_domain=LAN_DOMAIN)
 
-@app.route('/api/files')
+
+@app.get('/api/files')
 def api_files():
-    """获取文件列表API"""
-    files = get_file_info()
-    return jsonify(files)
+    return jsonify(get_file_info())
 
-@app.route('/api/disk-space')
-def api_disk_space():
-    """获取磁盘空间信息"""
-    disk_stat = shutil.disk_usage(UPLOAD_FOLDER)
-    return jsonify({
-        'total': disk_stat.total,
-        'used': disk_stat.used,
-        'free': disk_stat.free,
-        'free_formatted': format_size(disk_stat.free)
-    })
 
-@app.route('/download/<path:filename>')
+@app.get('/api/disk-space')
+def disk_space():
+    total, used, free = shutil.disk_usage(root())
+    return jsonify(total=total, used=used, free=free, free_formatted=format_size(free))
+
+
+@app.get('/download/<path:filename>')
 def download(filename):
-    """下载文件"""
-    # 安全检查：防止目录遍历攻击
-    file_path = (UPLOAD_FOLDER / filename).resolve()
-    if not str(file_path).startswith(str(UPLOAD_FOLDER.resolve())):
-        return "Invalid file path", 403
-    
-    if not file_path.exists():
-        return "File not found", 404
-    
-    if file_path.is_file():
-        return send_file(file_path, as_attachment=True, download_name=filename)
-    
-    # 如果是目录，创建zip文件下载
-    zip_path = UPLOAD_FOLDER / f"{filename}.zip"
-    shutil.make_archive(str(zip_path.with_suffix('')), 'zip', file_path)
-    return send_file(zip_path, as_attachment=True, download_name=f"{filename}.zip")
-
-@app.route('/upload', methods=['POST'])
-def upload():
-    """上传文件"""
-    if 'files' not in request.files:
-        return jsonify({'success': False, 'message': 'No files provided'}), 400
-    
-    files = request.files.getlist('files')
-    
-    # 检查磁盘空间
-    disk_stat = shutil.disk_usage(UPLOAD_FOLDER)
-    free_space = disk_stat.free
-    
-    # 计算要上传的总大小
-    total_upload_size = 0
-    for file in files:
-        if file.filename == '':
-            continue
-        file.seek(0, os.SEEK_END)
-        total_upload_size += file.tell()
-        file.seek(0)
-    
-    # 检查空间是否足够（预留1MB缓冲）
-    if total_upload_size > free_space - (1 * 1024 * 1024):
-        return jsonify({
-            'success': False,
-            'message': f'磁盘空间不足！需要 {format_size(total_upload_size)}，但只有 {format_size(free_space - 1024*1024)} 可用'
-        }), 413
-    
-    uploaded_files = []
-    
-    for file in files:
-        if file.filename == '':
-            continue
-        
-        # 防止恶意文件名
-        safe_filename = Path(file.filename).name
-        if safe_filename in ['app.py', 'requirements.txt']:
-            continue
-        
-        file_path = UPLOAD_FOLDER / safe_filename
-        file.save(file_path)
-        uploaded_files.append({
-            'name': safe_filename,
-            'size': format_size(file_path.stat().st_size)
-        })
-    
-    if uploaded_files:
-        return jsonify({
-            'success': True,
-            'message': f'Successfully uploaded {len(uploaded_files)} file(s)',
-            'files': uploaded_files
-        })
-    else:
-        return jsonify({'success': False, 'message': 'No files uploaded'}), 400
-
-@app.route('/delete/<path:filename>', methods=['POST'])
-def delete(filename):
-    """删除文件"""
-    file_path = (UPLOAD_FOLDER / filename).resolve()
-    if not str(file_path).startswith(str(UPLOAD_FOLDER.resolve())):
-        return jsonify({'success': False, 'message': 'Invalid path'}), 403
-    
-    if file_path.name in ['app.py', 'requirements.txt']:
-        return jsonify({'success': False, 'message': 'Cannot delete system files'}), 403
-    
+    path = safe_path(filename)
+    if not path.exists():
+        abort(404)
+    if path.is_file():
+        return send_file(path, as_attachment=True, download_name=path.name, conditional=True)
+    # Temporary archive lives outside the shared directory and is closed after streaming.
+    archive = tempfile.TemporaryFile()
     try:
-        if file_path.is_file():
-            file_path.unlink()
-        elif file_path.is_dir():
-            shutil.rmtree(file_path)
-        return jsonify({'success': True, 'message': 'File deleted'})
-    except Exception as e:
-        return jsonify({'success': False, 'message': str(e)}), 400
+        with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED, allowZip64=True) as zipped:
+            for directory, dirs, files in os.walk(path, followlinks=False):
+                dirs[:] = [name for name in dirs if not name.startswith('.') and not (Path(directory) / name).is_symlink()]
+                relative = Path(directory).relative_to(path)
+                if relative.parts:
+                    zipped.writestr(relative.as_posix() + '/', b'')
+                for name in files:
+                    item = Path(directory) / name
+                    if name.startswith('.') or item.is_symlink():
+                        continue
+                    safe_path(str(item.relative_to(root())))
+                    zipped.write(item, item.relative_to(path))
+        length = archive.tell()
+        archive.seek(0)
+        def chunks():
+            try:
+                while block := archive.read(1024 * 1024):
+                    yield block
+            finally:
+                archive.close()
+        response = Response(chunks(), mimetype='application/zip')
+        response.headers.set('Content-Disposition', 'attachment', filename=path.name + '.zip')
+        response.content_length = length
+        response.call_on_close(archive.close)
+        return response
+    except BaseException:
+        archive.close()
+        raise
+
+
+@app.post('/upload')
+def upload():
+    incoming = request.files.getlist('files')
+    if not incoming or not any(file.filename for file in incoming):
+        return jsonify(success=False, message='请选择文件'), 400
+    uploaded = []
+    for file in incoming:
+        if not file.filename:
+            continue
+        name = file.filename
+        if '/' in name or '\\' in name or name.startswith('.'):
+            return jsonify(success=False, message='文件名不合法', files=uploaded), 400
+        safe_path(name)
+        with tempfile.NamedTemporaryFile(dir=root(), prefix='.upload-', delete=False) as temporary:
+            temporary_path = Path(temporary.name)
+            try:
+                while block := file.stream.read(1024 * 1024):
+                    if shutil.disk_usage(root()).free < len(block) + 1024 * 1024:
+                        abort(413)
+                    temporary.write(block)
+                temporary.flush()
+                # Atomic no-overwrite publication also handles concurrent uploads.
+                index = 0
+                while True:
+                    final_name = name if index == 0 else f'{Path(name).stem} ({index}){Path(name).suffix}'
+                    destination = root() / final_name
+                    try:
+                        os.link(temporary_path, destination)
+                        break
+                    except FileExistsError:
+                        index += 1
+                uploaded.append(dict(name=final_name, size=format_size(destination.stat().st_size)))
+            finally:
+                temporary_path.unlink(missing_ok=True)
+    return jsonify(success=True, message=f'已上传 {len(uploaded)} 个文件（同名文件自动重命名）', files=uploaded)
+
+
+@app.post('/delete/<path:filename>')
+def delete(filename):
+    path = safe_path(filename)
+    if not path.exists():
+        abort(404)
+    if path.is_dir():
+        shutil.rmtree(path)
+    else:
+        path.unlink()
+    return jsonify(success=True, message='已删除')
+
 
 if __name__ == '__main__':
-    # 获取IP地址
-    ip = get_local_ip()
-    storage_path = UPLOAD_FOLDER.resolve()
-    print(f'\n════════════════════════════════════════')
-    print(f'🚀 文件共享服务器已启动!')
-    print(f'🧭 第一次运行请先在本机打开一次页面完成初始化')
-    print(f'📍 本地访问: http://127.0.0.1:5000')
-    print(f'🌐 网络访问: http://{ip}:5000')
-    if LAN_DOMAIN:
-        print(f'🏷️ 域名访问: http://{LAN_DOMAIN}:5000')
-    else:
-        print(f'🏷️ 域名访问: 未配置（可设置环境变量 LAN_DOMAIN）')
-    print(f'📁 文件上传/存储目录: {storage_path}')
-    print(f'════════════════════════════════════════\n')
-    
-    app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)
+    from waitress import serve
+    print(f'本机：http://127.0.0.1:{PORT}\n局域网：http://{get_local_ip()}:{PORT}\n共享目录：{root()}\n账号：shared\n密码：{ACCESS_TOKEN}', flush=True)
+    serve(app, host=os.getenv('HOST', '0.0.0.0'), port=PORT, threads=8, max_request_body_size=app.config['MAX_CONTENT_LENGTH'])
